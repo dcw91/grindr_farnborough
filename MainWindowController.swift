@@ -13,6 +13,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     private var remainingTime: Int = 60
     private var clickCount: Int = 0
     private static let clicksPerRefresh = 10
+    private var overlayView: NSView!
 
     convenience init() {
         let styleMask: NSWindow.StyleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
@@ -42,7 +43,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         contentView.wantsLayer = true
         window.contentView = contentView
 
-        // WebView fills the content area below the title bar
+        // WebView fills the content area
         webView = makeWebView(frame: NSRect(
             x: 0,
             y: 0,
@@ -51,6 +52,11 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         ))
         webView.autoresizingMask = [.width, .height]
         contentView.addSubview(webView)
+
+        // Overlay view for the timer - sits on top of webView
+        overlayView = NSView(frame: webView.bounds)
+        overlayView.autoresizingMask = [.width, .height]
+        contentView.addSubview(overlayView)
 
         // Title bar view at the top - this is the invisible drag area
         titleBarView = TitlebarDragView(frame: NSRect(
@@ -71,7 +77,6 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     }
 
     private func setupCountdownLabel() {
-        guard let webView = self.webView else { return }
         let label = NSTextField(labelWithString: "1:00")
         label.textColor = .white
         label.backgroundColor = .clear
@@ -84,7 +89,6 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         
         let labelSize = label.fittingSize
         // Position in lower left, above "Terms of Service" in the left menu bar
-        // The left menu bar is approximately 80px wide
         label.frame = NSRect(
             x: 10,
             y: 20,
@@ -93,7 +97,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         )
         label.autoresizingMask = [.minXMargin, .minYMargin]
         
-        webView.addSubview(label)
+        overlayView.addSubview(label)
         countdownLabel = label
         updateCountdownLabel()
     }
