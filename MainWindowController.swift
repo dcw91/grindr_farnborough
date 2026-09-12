@@ -3,7 +3,6 @@ import WebKit
 
 final class MainWindowController: NSWindowController, NSWindowDelegate {
     private var webView: WKWebView!
-    private let hoverZoneHeight: CGFloat = 10
     private var popupControllers: [PopupWindowController] = []
     private var countdownTimer: Timer?
     private var countdownLabel: NSTextField?
@@ -11,32 +10,45 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     private var clickCount: Int = 0
     private static let clicksPerRefresh = 10
     private var overlayView: NSView!
-    
-    private var nativeTitleBarVisible = false
 
-    private static let hoverHotZoneHeight: CGFloat = 10
+    private var titleBarRevealed = false
+    private static let hotZoneHeight: CGFloat = 10
+
+    /// Height of a standard title bar for this mask, computed without touching
+    /// the window's own state (frameRect(forContentRect:styleMask:) is a class
+    /// method - ~28 px on current macOS).
+    private static func nativeTitleBarHeight() -> CGFloat {
+        let probe = NSRect(x: 0, y: 0, width: 100, height: 100)
+        let frame = NSWindow.frameRect(forContentRect: probe,
+                                       styleMask: [.titled, .closable, .miniaturizable, .resizable])
+        return frame.height - probe.height
+    }
 
     private func updateTitleBarVisibility(forMouseY y: CGFloat) {
         guard let window = self.window else { return }
-        let windowHeight = window.frame.height
-
-        if !nativeTitleBarVisible, y > windowHeight - MainWindowController.hoverHotZoneHeight {
-            setNativeTitleBarVisible(true)
-        } else if nativeTitleBarVisible {
-            let nativeBarHeight = window.frame.height - window.contentLayoutRect.height
-            if y < windowHeight - max(nativeBarHeight, 28) {
-                setNativeTitleBarVisible(false)
-            }
+        let h = window.frame.height
+        if !titleBarRevealed, y > h - MainWindowController.hotZoneHeight {
+            setTitleBarRevealed(true)
+        } else if titleBarRevealed, y < h - MainWindowController.nativeTitleBarHeight() {
+            setTitleBarRevealed(false)
         }
     }
 
-    private func setNativeTitleBarVisible(_ visible: Bool) {
-        guard visible != nativeTitleBarVisible, let window = self.window else { return }
-        nativeTitleBarVisible = visible
-        if visible {
-            window.styleMask.remove(.fullSizeContentView)
-        } else {
-            window.styleMask.insert(.fullSizeContentView)
+    private func setTitleBarRevealed(_ revealed: Bool) {
+        guard titleBarRevealed != revealed,
+              let window = self.window,
+              let contentView = window.contentView else { return }
+        titleBarRevealed = revealed
+
+        // Page adapts to the smaller viewport rather than sitting under the bar
+        let full = contentView.bounds
+        let barHeight = MainWindowController.nativeTitleBarHeight()
+        let webHeight = revealed ? full.height - barHeight : full.height
+        webView.frame = NSRect(x: 0, y: 0, width: full.width, height: webHeight)
+        overlayView.frame = webView.frame
+
+        for type in [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton] {
+            window.standardWindowButton(type)?.alphaValue = revealed ? 1 : 0
         }
     }
 
@@ -48,10 +60,10 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             backing: .buffered,
             defer: false
         )
-        
+
         window.title = AppConfig.windowTitle
-        window.titlebarAppearsTransparent = false
-        window.titleVisibility = .hidden          // flip to .visible if you want "Grindr" shown in the bar
+        window.titlebarAppearsTransparent = true
+        window.titleVisibility = .hidden
         window.isMovableByWindowBackground = false
         window.acceptsMouseMovedEvents = true
         window.center()
@@ -60,18 +72,22 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         self.init(window: window)
         window.delegate = self
 
+        // Buttons start invisible - they appear with the "bar"
+        for type in [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton] {
+            window.standardWindowButton(type)?.alphaValue = 0
+        }
+
         window.onMouseMoved = { [weak self] y in
             self?.updateTitleBarVisibility(forMouseY: y)
         }
 
         setup()
         startTimers()
-        
     }
 
     private func setup() {
         guard let window = self.window else { return }
-        
+
         let contentView = NSView(frame: window.contentRect(forFrameRect: window.frame))
         contentView.wantsLayer = true
         window.contentView = contentView
@@ -105,7 +121,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         label.isSelectable = false
         label.font = NSFont.systemFont(ofSize: 12, weight: .medium)
         label.alignment = .left
-        
+
         let labelSize = label.fittingSize
         // Position in lower left, within the left black menu bar, above "Terms of Service"
         let overlayHeight = overlayView.bounds.height
@@ -116,7 +132,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             height: labelSize.height
         )
         label.autoresizingMask = [.minXMargin, .maxYMargin]
-        
+
         overlayView.addSubview(label)
         countdownLabel = label
         updateCountdownLabel()
@@ -150,7 +166,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         view.navigationDelegate = self
         view.allowsBackForwardNavigationGestures = true
         view.customUserAgent = AppConfig.safariUserAgent
-        
+
         return view
     }
 
@@ -184,7 +200,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         countdownTimer?.invalidate()
         remainingTime = 60
         updateCountdownLabel()
-        
+
         countdownTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
             self?.tickTimer()
         }
@@ -193,12 +209,12 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     @objc private func tickTimer() {
         remainingTime -= 1
         updateCountdownLabel()
-        
+
         if remainingTime == 0 {
             remainingTime = 60
             clickRefreshButton()
             clickCount += 1
-            
+
             if clickCount >= MainWindowController.clicksPerRefresh {
                 clickCount = 0
                 DispatchQueue.main.async { [weak self] in
@@ -259,16 +275,16 @@ extension MainWindowController: WKNavigationDelegate {
     func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
         decisionHandler(.allow)
     }
-    
+
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in
             self?.clickRefreshButton()
         }
     }
-    
+
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
     }
-    
+
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
     }
 }
