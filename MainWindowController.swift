@@ -7,6 +7,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     private var dragBar: TitlebarDragView!
     private let dragBarHeight: CGFloat = 34
     private var popupControllers: [PopupWindowController] = []
+    private var refreshTimer: Timer?
 
     convenience init() {
         let styleMask: NSWindow.StyleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
@@ -27,6 +28,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         self.init(window: window)
         window.delegate = self
         setup()
+        startRefreshTimer()
     }
 
     private func setup() {
@@ -115,7 +117,15 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     }
 
     func windowWillClose(_ notification: Notification) {
+        refreshTimer?.invalidate()
         NSApp.terminate(nil)
+    }
+
+    private func startRefreshTimer() {
+        refreshTimer?.invalidate()
+        refreshTimer = Timer.scheduledTimer(withTimeInterval: 180, repeats: true) { [weak self] _ in
+            self?.loadTarget()
+        }
     }
 }
 
