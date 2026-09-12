@@ -192,7 +192,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         
         countdownTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
             Task { @MainActor in
-                self?.tickTimer()
+                await self?.tickTimer()
             }
         }
     }
