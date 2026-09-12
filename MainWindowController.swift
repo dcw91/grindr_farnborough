@@ -4,7 +4,7 @@ import WebKit
 final class MainWindowController: NSWindowController, NSWindowDelegate {
     private var webView: WKWebView!
     private var titleBarView: TitlebarDragView!
-    private let titleBarHeight: CGFloat = 34
+    private let titleBarHeight: CGFloat = 20
     private var popupControllers: [PopupWindowController] = []
     private var countdownTimer: Timer?
     private var countdownLabel: NSTextField?
@@ -16,14 +16,14 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     convenience init() {
         let styleMask: NSWindow.StyleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
         let window = KeyableWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 480, height: 860),
+            contentRect: NSRect(x: 0, y: 0, width: 818, height: 935),
             styleMask: styleMask,
             backing: .buffered,
             defer: false
         )
         window.title = AppConfig.windowTitle
         window.center()
-        window.minSize = NSSize(width: 360, height: 480)
+        window.minSize = NSSize(width: 818, height: 935)
 
         window.titlebarAppearsTransparent = true
         window.titleVisibility = .hidden
