@@ -11,7 +11,7 @@ enum AppConfig {
     static let accuracy: Double = 1
     static let spoofEnabled: Bool = true
 
-    static let targetURL: String = "https://web.grindr.com"
+    static let targetURL: String = "https://web.grindr.com/?profile=true"
     static let windowTitle: String = "Grindr"
 
     /// Exact desktop Safari UA string. Keep the Safari/WebKit version numbers
