@@ -7,6 +7,8 @@
 	<key>com.apple.security.network.client</key>
 	<true/>
 	<key>com.apple.security.temporary-exception.files.absolute-path.read</key>
-	<string>/Library/Preferences/com.apple.networkd.plist</string>
+	<array>
+		<string>/Library/Preferences/com.apple.networkd.plist</string>
+	</array>
 </dict>
 </plist>

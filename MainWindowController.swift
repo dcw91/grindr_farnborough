@@ -14,8 +14,6 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     private var overlayView: NSView!
 
     convenience init() {
-        print("[DEBUG] MainWindowController init started")
-        
         let styleMask: NSWindow.StyleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
         let window = KeyableWindow(
             contentRect: NSRect(x: 0, y: 0, width: 818, height: 935),
@@ -34,28 +32,17 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         self.init(window: window)
         window.delegate = self
         
-        print("[DEBUG] Calling setup()")
         setup()
-        
-        print("[DEBUG] Calling startTimers()")
         startTimers()
-        
-        print("[DEBUG] MainWindowController init completed")
     }
 
     private func setup() {
-        print("[DEBUG] setup() started")
-        guard let window = self.window else { 
-            print("[DEBUG] ERROR: window is nil")
-            return 
-        }
+        guard let window = self.window else { return }
         
-        print("[DEBUG] Creating contentView")
         let contentView = NSView(frame: window.contentRect(forFrameRect: window.frame))
         contentView.wantsLayer = true
         window.contentView = contentView
 
-        print("[DEBUG] Creating webView")
         // WebView fills the content area
         webView = makeWebView(frame: NSRect(
             x: 0,
@@ -65,18 +52,13 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         ))
         webView.autoresizingMask = [.width, .height]
         contentView.addSubview(webView)
-        
-        print("[DEBUG] webView frame: \(webView.frame)")
-        print("[DEBUG] webView bounds: \(webView.bounds)")
 
         // Overlay view for the timer - sits on top of webView
-        print("[DEBUG] Creating overlayView")
         overlayView = NSView(frame: webView.bounds)
         overlayView.autoresizingMask = [.width, .height]
         contentView.addSubview(overlayView)
 
         // Title bar view at the top - this is the invisible drag area
-        print("[DEBUG] Creating titleBarView")
         titleBarView = TitlebarDragView(frame: NSRect(
             x: 0,
             y: contentView.bounds.height - titleBarHeight,
@@ -85,25 +67,16 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         ))
         titleBarView.autoresizingMask = [.width, .minYMargin]
         titleBarView.onHoverChanged = { [weak self] hovering in
-            print("[DEBUG] Hover changed to: \(hovering)")
             self?.setTitleBarButtonsVisible(hovering, animated: true)
         }
         contentView.addSubview(titleBarView)
 
-        print("[DEBUG] Creating countdown label")
         setupCountdownLabel()
-        
-        print("[DEBUG] Hiding title bar buttons")
         setTitleBarButtonsVisible(false, animated: false)
-        
-        print("[DEBUG] Loading target URL: \(AppConfig.targetURL)")
         loadTarget()
-        
-        print("[DEBUG] setup() completed")
     }
 
     private func setupCountdownLabel() {
-        print("[DEBUG] setupCountdownLabel() started")
         let label = NSTextField(labelWithString: "1:00")
         label.textColor = .white
         label.backgroundColor = .clear
@@ -115,20 +88,19 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         label.alignment = .left
         
         let labelSize = label.fittingSize
-        // Position in lower left, above "Terms of Service" in the left menu bar
+        // Position in lower left, within the left black menu bar, above "Terms of Service"
+        let overlayHeight = overlayView.bounds.height
         label.frame = NSRect(
             x: 10,
-            y: 20,
+            y: overlayHeight - 40,
             width: labelSize.width + 10,
             height: labelSize.height
         )
-        label.autoresizingMask = [.minXMargin, .minYMargin]
+        label.autoresizingMask = [.minXMargin, .maxYMargin]
         
         overlayView.addSubview(label)
         countdownLabel = label
         updateCountdownLabel()
-        
-        print("[DEBUG] Countdown label created at: \(label.frame)")
     }
 
     private func updateCountdownLabel() {
@@ -157,8 +129,6 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     }
 
     private func makeWebView(frame: NSRect) -> WKWebView {
-        print("[DEBUG] makeWebView() started with frame: \(frame)")
-        
         let config = WKWebViewConfiguration()
         let userContentController = WKUserContentController()
         userContentController.addUserScript(GeolocationInjector.script())
@@ -181,23 +151,15 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         view.allowsBackForwardNavigationGestures = true
         view.customUserAgent = AppConfig.safariUserAgent
         
-        print("[DEBUG] makeWebView() completed")
         return view
     }
 
     private func loadTarget() {
-        print("[DEBUG] loadTarget() started")
-        guard let url = URL(string: AppConfig.targetURL) else { 
-            print("[DEBUG] ERROR: Invalid URL")
-            return 
-        }
-        print("[DEBUG] Loading URL: \(url.absoluteString)")
+        guard let url = URL(string: AppConfig.targetURL) else { return }
         webView.load(URLRequest(url: url))
-        print("[DEBUG] loadTarget() completed")
     }
 
     private func clickRefreshButton() {
-        print("[DEBUG] clickRefreshButton() started")
         let js = """
         (function() {
             var btn = document.querySelector('button[aria-label="refresh grid"]');
@@ -205,7 +167,6 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
                 btn.click();
                 return true;
             }
-            // Fallback: try to find by class pattern if aria-label not found
             var buttons = document.querySelectorAll('button');
             for (var i = 0; i < buttons.length; i++) {
                 if (buttons[i].getAttribute('aria-label') && buttons[i].getAttribute('aria-label').includes('refresh')) {
@@ -216,53 +177,38 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             return false;
         })();
         """
-        webView.evaluateJavaScript(js) { result, error in
-            if let error = error {
-                print("[DEBUG] Error clicking refresh button: \(error)")
-            } else {
-                print("[DEBUG] Refresh button clicked successfully, result: \(String(describing: result))")
-            }
-        }
-        print("[DEBUG] clickRefreshButton() completed")
+        webView.evaluateJavaScript(js)
     }
 
     private func startTimers() {
-        print("[DEBUG] startTimers() started")
-        // Countdown timer - updates every second
         countdownTimer?.invalidate()
         remainingTime = 60
         updateCountdownLabel()
         
         countdownTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
-            print("[DEBUG] Timer fired, remainingTime before: \(self?.remainingTime ?? -1)")
             self?.tickTimer()
-            print("[DEBUG] Timer fired, remainingTime after: \(self?.remainingTime ?? -1)")
         }
-        print("[DEBUG] Timer started")
     }
 
-    private func tickTimer() {
-        print("[DEBUG] tickTimer() started, remainingTime: \(remainingTime)")
+    @objc private func tickTimer() {
         remainingTime -= 1
         updateCountdownLabel()
         
         if remainingTime == 0 {
-            print("[DEBUG] Timer reached 0, clicking refresh button")
             remainingTime = 60
             clickRefreshButton()
             clickCount += 1
             
-            print("[DEBUG] clickCount: \(clickCount)")
             if clickCount >= MainWindowController.clicksPerRefresh {
-                print("[DEBUG] Performing full reload")
                 clickCount = 0
-                window?.makeKeyAndOrderFront(nil)
-                NSApp.activate(ignoringOtherApps: true)
-                window?.makeFirstResponder(webView)
-                loadTarget()
+                DispatchQueue.main.async { [weak self] in
+                    self?.window?.makeKeyAndOrderFront(nil)
+                    NSApp.activate(ignoringOtherApps: true)
+                    self?.window?.makeFirstResponder(self?.webView)
+                    self?.loadTarget()
+                }
             }
         }
-        print("[DEBUG] tickTimer() completed")
     }
 
     func zoomIn() {
@@ -278,19 +224,12 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     }
 
     func windowWillClose(_ notification: Notification) {
-        print("[DEBUG] windowWillClose()")
         countdownTimer?.invalidate()
         NSApp.terminate(nil)
     }
 }
 
 extension MainWindowController: WKUIDelegate {
-    /// Called when the page executes window.open() — this is exactly what
-    /// Google Identity Services' Sign-In popup does. Returning a real
-    /// WKWebView built with the SAME configuration object keeps
-    /// window.opener / postMessage wired to the parent page, which is
-    /// required for the GSI credential hand-off to complete instead of
-    /// stalling on accounts.google.com/gsi/transform.
     func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration, for navigationAction: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
         guard navigationAction.targetFrame == nil else { return nil }
 
@@ -308,9 +247,6 @@ extension MainWindowController: WKUIDelegate {
         return popup.webView
     }
 
-    /// Called when the popup page executes window.close() after it has
-    /// finished posting the credential back to the opener — close and
-    /// release the matching popup window.
     func webViewDidClose(_ webView: WKWebView) {
         if let index = popupControllers.firstIndex(where: { $0.webView === webView }) {
             popupControllers[index].close()
@@ -321,32 +257,22 @@ extension MainWindowController: WKUIDelegate {
 
 extension MainWindowController: WKNavigationDelegate {
     func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
-        print("[DEBUG] decidePolicyFor navigationAction: \(navigationAction.request.url?.absoluteString ?? "nil")")
         decisionHandler(.allow)
     }
     
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-        print("[DEBUG] didFinish navigation")
-        // After page loads, ensure we can click the button
-        // Give a small delay for the page to fully render
         DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in
-            print("[DEBUG] Delayed refresh button click after page load")
             self?.clickRefreshButton()
         }
     }
     
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
-        print("[DEBUG] didFail navigation with error: \(error)")
     }
     
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
-        print("[DEBUG] didFailProvisionalNavigation with error: \(error)")
     }
 }
 
-/// NSWindow subclass so the borderless-styled, titlebar-hidden window can
-/// still become key and accept keyboard input (needed for Cmd+/Cmd- to reach
-/// the WKWebView and for text fields on the page to receive focus/typing).
 final class KeyableWindow: NSWindow {
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { true }
