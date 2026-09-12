@@ -2,17 +2,52 @@ import Cocoa
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
-    var mainWindowController: MainWindowController?
+    private var windowControllers: [MainWindowController] = []
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         buildMenuBar()
-        mainWindowController = MainWindowController()
-        mainWindowController?.showWindow(nil)
-        NSApp.activate(ignoringOtherApps: true)
+        // Compile the tracker blocklist once, then open one window per profile.
+        ContentBlocker.prepare {
+            DispatchQueue.main.async {
+                self.createWindows()
+            }
+        }
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         true
+    }
+
+    private func createWindows() {
+        for (index, profile) in AppConfig.profiles.enumerated() {
+            let controller = MainWindowController(profile: profile)
+            controller.showWindow(nil)
+            // Stagger windows so both are visible on launch
+            if index > 0, let window = controller.window {
+                var origin = window.frame.origin
+                origin.x += 40 * CGFloat(index)
+                origin.y -= 40 * CGFloat(index)
+                window.setFrameOrigin(origin)
+            }
+            windowControllers.append(controller)
+        }
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    private func keyWindowController() -> MainWindowController? {
+        windowControllers.first { $0.window?.isKeyWindow == true } ?? windowControllers.first
+    }
+
+    @objc private func zoomIn(_ sender: Any?) {
+        keyWindowController()?.zoomIn()
+    }
+
+    @objc private func zoomOut(_ sender: Any?) {
+        keyWindowController()?.zoomOut()
+    }
+
+    @objc private func resetZoom(_ sender: Any?) {
+        keyWindowController()?.resetZoom()
     }
 
     private func buildMenuBar() {
@@ -20,7 +55,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let appMenuItem = NSMenuItem()
         let appMenu = NSMenu()
-        appMenu.addItem(withTitle: "Quit \(AppConfig.windowTitle)", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        appMenu.addItem(withTitle: "Quit Grindr", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         appMenuItem.submenu = appMenu
         mainMenu.addItem(appMenuItem)
 
@@ -53,17 +88,5 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         mainMenu.addItem(windowMenuItem)
 
         NSApp.mainMenu = mainMenu
-    }
-
-    @objc private func zoomIn(_ sender: Any?) {
-        mainWindowController?.zoomIn()
-    }
-
-    @objc private func zoomOut(_ sender: Any?) {
-        mainWindowController?.zoomOut()
-    }
-
-    @objc private func resetZoom(_ sender: Any?) {
-        mainWindowController?.resetZoom()
     }
 }

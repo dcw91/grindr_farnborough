@@ -1,18 +1,41 @@
 import Foundation
 
-/// Edit these values to change the spoofed location. No UI is exposed for
-/// this on purpose — the app always reports this fixed position to any page
-/// it loads, matching how you used the browser extension pinned to one spot.
-enum AppConfig {
-    static let latitude: Double = 51.30572073970581
-    /// Longitude in decimal degrees, -180...180.
-    static let longitude: Double = -0.7607691514605267
+/// One location + login pairing. Each profile gets its own persistent website
+/// data store (keyed by dataStoreIdentifier), so both windows stay logged in
+/// independently while sharing the same WKProcessPool.
+struct LocationProfile {
+    let name: String
+    let latitude: Double
+    let longitude: Double
     /// Reported GPS accuracy in metres. Lower looks more precise/realistic.
-    static let accuracy: Double = 1
-    static let spoofEnabled: Bool = true
+    let accuracy: Double
+    /// Stable per-login identifier. Do not change once a profile is in use,
+    /// or its stored session will be orphaned.
+    let dataStoreIdentifier: UUID
+}
 
-    static let targetURL: String = "https://web.grindr.com/?profile=true"
-    static let windowTitle: String = "Grindr"
+enum AppConfig {
+    static let spoofEnabled = true
+
+    /// One window per profile, all inside a single app process.
+    static let profiles: [LocationProfile] = [
+        LocationProfile(
+            name: "Farnborough",
+            latitude: 51.30572073970581,
+            longitude: -0.7607691514605267,
+            accuracy: 1,
+            dataStoreIdentifier: UUID(uuidString: "F6B7C8D2-3E45-4A67-9B01-2C3D4E5F6071")!
+        ),
+        LocationProfile(
+            name: "Plymouth",
+            latitude: 50.37520489584196,
+            longitude: -4.140465291589633,
+            accuracy: 1,
+            dataStoreIdentifier: UUID(uuidString: "A1B2C3D4-5E6F-4789-0ABC-DEF012345678")!
+        )
+    ]
+
+    static let targetURL = "https://web.grindr.com/?profile=true"
 
     /// Exact desktop Safari UA string. Keep the Safari/WebKit version numbers
     /// matching a real, current Safari release.

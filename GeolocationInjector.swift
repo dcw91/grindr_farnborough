@@ -1,14 +1,15 @@
 import WebKit
 
-/// Builds the JS payload injected at document-start, in every frame. This is
-/// a direct port of the page-override.js logic from the "Tab Location"
-/// extension: it monkey-patches navigator.geolocation so that
-/// getCurrentPosition / watchPosition always resolve with the fixed
-/// coordinates from AppConfig instead of hitting the real Geolocation API.
+/// Builds the JS payload injected at document-start, in every frame, for one
+/// profile's fixed location. This is a direct port of the page-override.js
+/// logic from the "Tab Location" extension: it monkey-patches
+/// navigator.geolocation so that getCurrentPosition / watchPosition always
+/// resolve with the profile's coordinates instead of hitting the real
+/// Geolocation API.
 enum GeolocationInjector {
 
-    static func script() -> WKUserScript {
-        let source = makeSource()
+    static func script(for profile: LocationProfile) -> WKUserScript {
+        let source = makeSource(for: profile)
         return WKUserScript(
             source: source,
             injectionTime: .atDocumentStart,
@@ -16,15 +17,15 @@ enum GeolocationInjector {
         )
     }
 
-    private static func detailJSON() -> String {
+    private static func detailJSON(for profile: LocationProfile) -> String {
         guard AppConfig.spoofEnabled else { return "{ enabled: false }" }
         return """
-        { enabled: true, latitude: \(AppConfig.latitude), longitude: \(AppConfig.longitude), accuracy: \(AppConfig.accuracy) }
+        { enabled: true, latitude: \(profile.latitude), longitude: \(profile.longitude), accuracy: \(profile.accuracy) }
         """
     }
 
-    private static func makeSource() -> String {
-        let initialDetail = detailJSON()
+    private static func makeSource(for profile: LocationProfile) -> String {
+        let initialDetail = detailJSON(for: profile)
         return """
         (function() {
           if (window.__nativeLocationInstalled) return;

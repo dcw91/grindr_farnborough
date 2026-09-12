@@ -2,6 +2,11 @@ import Cocoa
 import WebKit
 
 final class MainWindowController: NSWindowController, NSWindowDelegate {
+    /// One shared process pool for every profile window: WebKit then runs a
+    /// single set of WebContent/GPU/Networking helpers instead of one stack
+    /// per window - the main RAM saving over running two separate app builds.
+    private static let processPool = WKProcessPool()
+
     private var webView: WKWebView!
     private var popupControllers: [PopupWindowController] = []
     private var countdownTimer: Timer?
@@ -10,6 +15,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     private var clickCount: Int = 0
     private static let clicksPerRefresh = 10
     private var overlayView: NSView!
+
+    private var profile: LocationProfile!
 
     private var titleBarRevealed = false
     private static let hotZoneHeight: CGFloat = 10
@@ -52,7 +59,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         }
     }
 
-    convenience init() {
+    convenience init(profile: LocationProfile) {
         let styleMask: NSWindow.StyleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
         let window = KeyableWindow(
             contentRect: NSRect(x: 0, y: 0, width: 818, height: 935),
@@ -61,15 +68,18 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             defer: false
         )
 
-        window.title = AppConfig.windowTitle
+        // Title identifies which location this window is for (e.g. "Grindr
+        // Farnborough"), shown whenever the title bar is revealed on hover.
+        window.title = "Grindr \(profile.name)"
         window.titlebarAppearsTransparent = true
-        window.titleVisibility = .hidden
+        window.titleVisibility = .visible
         window.isMovableByWindowBackground = false
         window.acceptsMouseMovedEvents = true
         window.center()
         window.minSize = NSSize(width: 818, height: 935)
 
         self.init(window: window)
+        self.profile = profile
         window.delegate = self
 
         // Buttons start invisible - they appear with the "bar"
@@ -146,10 +156,21 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
 
     private func makeWebView(frame: NSRect) -> WKWebView {
         let config = WKWebViewConfiguration()
+        config.processPool = MainWindowController.processPool
+
+        // Per-profile persistent store: separate cookies/session per login.
+        if #available(macOS 14, *) {
+            config.websiteDataStore = WKWebsiteDataStore(forIdentifier: profile.dataStoreIdentifier)
+        } else {
+            config.websiteDataStore = .default()
+        }
+
         let userContentController = WKUserContentController()
-        userContentController.addUserScript(GeolocationInjector.script())
+        userContentController.addUserScript(GeolocationInjector.script(for: profile))
+        if let rules = ContentBlocker.ruleList {
+            userContentController.add(rules)
+        }
         config.userContentController = userContentController
-        config.websiteDataStore = .default()
 
         let preferences = WKPreferences()
         preferences.javaScriptCanOpenWindowsAutomatically = true
@@ -242,8 +263,9 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     }
 
     func windowWillClose(_ notification: Notification) {
+        // App quits when the LAST window closes (applicationShouldTerminate-
+        // AfterLastWindowClosed); an individual window just stops its timer.
         countdownTimer?.invalidate()
-        NSApp.terminate(nil)
     }
 }
 
