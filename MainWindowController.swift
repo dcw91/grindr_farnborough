@@ -1,7 +1,6 @@
 import Cocoa
 import WebKit
 
-@MainActor
 final class MainWindowController: NSWindowController, NSWindowDelegate {
     private var webView: WKWebView!
     private var titleBarView: TitlebarDragView!
@@ -66,9 +65,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         ))
         titleBarView.autoresizingMask = [.width, .minYMargin]
         titleBarView.onHoverChanged = { [weak self] hovering in
-            MainActor.run {
-                self?.setTitleBarButtonsVisible(hovering, animated: true)
-            }
+            self?.setTitleBarButtonsVisible(hovering, animated: true)
         }
         contentView.addSubview(titleBarView)
 
@@ -191,9 +188,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         updateCountdownLabel()
         
         countdownTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
-            MainActor.run {
-                self?.tickTimer()
-            }
+            self?.tickTimer()
         }
     }
 
@@ -278,9 +273,7 @@ extension MainWindowController: WKNavigationDelegate {
         // After page loads, ensure we can click the button
         // Give a small delay for the page to fully render
         DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in
-            MainActor.run {
-                self?.clickRefreshButton()
-            }
+            self?.clickRefreshButton()
         }
     }
 }
