@@ -3,10 +3,7 @@ import WebKit
 
 final class MainWindowController: NSWindowController, NSWindowDelegate {
     private var webView: WKWebView!
-    private var titleBarView: TitlebarDragView!
     private let hoverZoneHeight: CGFloat = 10
-    private var titleBarStrip: NSView!
-    private var titleBarVisible = false
     private var popupControllers: [PopupWindowController] = []
     private var countdownTimer: Timer?
     private var countdownLabel: NSTextField?
@@ -14,6 +11,34 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     private var clickCount: Int = 0
     private static let clicksPerRefresh = 10
     private var overlayView: NSView!
+    
+    private var nativeTitleBarVisible = false
+
+    private static let hoverHotZoneHeight: CGFloat = 10
+
+    private func updateTitleBarVisibility(forMouseY y: CGFloat) {
+        guard let window = self.window else { return }
+        let windowHeight = window.frame.height
+
+        if !nativeTitleBarVisible, y > windowHeight - MainWindowController.hoverHotZoneHeight {
+            setNativeTitleBarVisible(true)
+        } else if nativeTitleBarVisible {
+            let nativeBarHeight = window.frame.height - window.contentLayoutRect.height
+            if y < windowHeight - max(nativeBarHeight, 28) {
+                setNativeTitleBarVisible(false)
+            }
+        }
+    }
+
+    private func setNativeTitleBarVisible(_ visible: Bool) {
+        guard visible != nativeTitleBarVisible, let window = self.window else { return }
+        nativeTitleBarVisible = visible
+        if visible {
+            window.styleMask.remove(.fullSizeContentView)
+        } else {
+            window.styleMask.insert(.fullSizeContentView)
+        }
+    }
 
     convenience init() {
         let styleMask: NSWindow.StyleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
@@ -23,19 +48,25 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             backing: .buffered,
             defer: false
         )
+        
         window.title = AppConfig.windowTitle
+        window.titlebarAppearsTransparent = false
+        window.titleVisibility = .hidden          // flip to .visible if you want "Grindr" shown in the bar
+        window.isMovableByWindowBackground = false
+        window.acceptsMouseMovedEvents = true
         window.center()
         window.minSize = NSSize(width: 818, height: 935)
 
-        window.titlebarAppearsTransparent = true
-        window.titleVisibility = .hidden
-        window.isMovableByWindowBackground = false
-
         self.init(window: window)
         window.delegate = self
-        
+
+        window.onMouseMoved = { [weak self] y in
+            self?.updateTitleBarVisibility(forMouseY: y)
+        }
+
         setup()
         startTimers()
+        
     }
 
     private func setup() {
@@ -60,38 +91,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         overlayView.autoresizingMask = [.width, .height]
         contentView.addSubview(overlayView)
 
-        // Visible bar, hidden until hover - only as tall as the window buttons need
-        let stripHeight = measuredTitleBarHeight()
-        titleBarStrip = NSView(frame: NSRect(
-            x: 0,
-            y: contentView.bounds.height - stripHeight,
-            width: contentView.bounds.width,
-            height: stripHeight
-        ))
-        titleBarStrip.wantsLayer = true
-        titleBarStrip.layer?.backgroundColor = NSColor.black.cgColor
-        titleBarStrip.autoresizingMask = [.width, .minYMargin]
-        titleBarStrip.alphaValue = 0
-        titleBarStrip.isHidden = true
-        contentView.addSubview(titleBarStrip)
-
-        // Invisible hover zone at the very top - this is the drag area too
-        titleBarView = TitlebarDragView(frame: NSRect(
-            x: 0,
-            y: contentView.bounds.height - hoverZoneHeight,
-            width: contentView.bounds.width,
-            height: hoverZoneHeight
-        ))
-        titleBarView.autoresizingMask = [.width, .minYMargin]
-        titleBarView.onHoverChanged = { [weak self] hovering in
-            self?.setTitleBarVisible(hovering, animated: true)
-        }
-        contentView.addSubview(titleBarView)
-
         setupCountdownLabel()
-        for type in [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton] {
-            window.standardWindowButton(type)?.alphaValue = 0
-        }
         loadTarget()
     }
 
@@ -126,50 +126,6 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         let minutes = remainingTime / 60
         let seconds = remainingTime % 60
         countdownLabel?.stringValue = String(format: "%d:%02d", minutes, seconds)
-    }
-
-    /// Smallest bar that still fully contains the traffic-light buttons,
-    /// measured live from their frames, clamped to 20–28 px.
-    private func measuredTitleBarHeight() -> CGFloat {
-        guard let window = self.window, let contentView = window.contentView else { return 24 }
-        var lowestBottom: CGFloat = .greatestFiniteMagnitude
-        for type in [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton] {
-            if let button = window.standardWindowButton(type) {
-                let frame = button.convert(button.bounds, to: contentView)
-                lowestBottom = min(lowestBottom, frame.minY)
-            }
-        }
-        guard lowestBottom.isFinite else { return 24 }
-        return min(max(contentView.bounds.height - lowestBottom + 4, 20), 28)
-    }
-
-    private func setTitleBarVisible(_ visible: Bool, animated: Bool) {
-        guard visible != titleBarVisible, let window = self.window, let contentView = window.contentView else { return }
-        titleBarVisible = visible
-
-        let stripHeight = measuredTitleBarHeight()
-        let full = contentView.bounds
-
-        // Bar frame + hover zone grows to cover the whole bar while visible
-        titleBarStrip.frame = NSRect(x: 0, y: full.height - stripHeight, width: full.width, height: stripHeight)
-        let zoneHeight = visible ? stripHeight : hoverZoneHeight
-        titleBarView.frame = NSRect(x: 0, y: full.height - zoneHeight, width: full.width, height: zoneHeight)
-
-        // Page shrinks to make room rather than being covered
-        let webHeight = visible ? full.height - stripHeight : full.height
-        webView.frame = NSRect(x: 0, y: 0, width: full.width, height: webHeight)
-        overlayView.frame = webView.frame
-
-        if visible { titleBarStrip.isHidden = false }
-        NSAnimationContext.runAnimationGroup({ context in
-            context.duration = animated ? 0.18 : 0
-            self.titleBarStrip.animator().alphaValue = visible ? 1 : 0
-            for type in [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton] {
-                window.standardWindowButton(type)?.animator().alphaValue = visible ? 1 : 0
-            }
-        }, completionHandler: {
-            if !self.titleBarVisible { self.titleBarStrip.isHidden = true }
-        })
     }
 
     private func makeWebView(frame: NSRect) -> WKWebView {
@@ -318,6 +274,13 @@ extension MainWindowController: WKNavigationDelegate {
 }
 
 final class KeyableWindow: NSWindow {
+    var onMouseMoved: ((CGFloat) -> Void)?
+
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { true }
+
+    override func mouseMoved(with event: NSEvent) {
+        super.mouseMoved(with: event)
+        onMouseMoved?(event.locationInWindow.y)
+    }
 }
