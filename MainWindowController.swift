@@ -125,6 +125,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         refreshTimer?.invalidate()
         refreshTimer = Timer.scheduledTimer(withTimeInterval: 180, repeats: true) { [weak self] _ in
             self?.window?.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+            self?.window?.makeFirstResponder(self?.webView)
             self?.loadTarget()
         }
     }
