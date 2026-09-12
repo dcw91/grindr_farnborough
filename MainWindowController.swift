@@ -10,9 +10,10 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     private var refreshTimer: Timer?
     private var countdownLabel: NSTextField?
     private var remainingTime: Int = 180
+    private var titleBarHeight: CGFloat = 0
 
     convenience init() {
-        let styleMask: NSWindow.StyleMask = [.titled, .closable, .miniaturizable, .resizable]
+        let styleMask: NSWindow.StyleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
         let window = KeyableWindow(
             contentRect: NSRect(x: 0, y: 0, width: 480, height: 860),
             styleMask: styleMask,
@@ -23,9 +24,9 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         window.center()
         window.minSize = NSSize(width: 360, height: 480)
 
-        window.titlebarAppearsTransparent = false
-        window.titleVisibility = .visible
-        window.isMovableByWindowBackground = true
+        window.titlebarAppearsTransparent = true
+        window.titleVisibility = .hidden
+        window.isMovableByWindowBackground = false
 
         self.init(window: window)
         window.delegate = self
@@ -39,19 +40,9 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         contentView.wantsLayer = true
         window.contentView = contentView
 
-        // Create a container for the webView that will be positioned below the title bar
-        let webContainer = NSView(frame: NSRect(
-            x: 0,
-            y: 0,
-            width: contentView.bounds.width,
-            height: contentView.bounds.height
-        ))
-        webContainer.autoresizingMask = [.width, .height]
-        contentView.addSubview(webContainer)
-
-        webView = makeWebView(frame: webContainer.bounds)
+        webView = makeWebView(frame: contentView.bounds)
         webView.autoresizingMask = [.width, .height]
-        webContainer.addSubview(webView)
+        contentView.addSubview(webView)
 
         dragBar = TitlebarDragView(frame: NSRect(
             x: 0,
@@ -61,27 +52,26 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         ))
         dragBar.autoresizingMask = [.width, .minYMargin]
         dragBar.onHoverChanged = { [weak self] hovering in
-            self?.setTitlebarControlsHidden(!hovering, animated: true)
+            self?.setTitleBarVisible(hovering, animated: true)
         }
         contentView.addSubview(dragBar)
 
-        setTitlebarControlsHidden(false, animated: false)
-        setupCountdownLabel(in: webContainer)
+        setupCountdownLabel()
+        setTitleBarVisible(false, animated: false)
         loadTarget()
     }
 
-    private func setupCountdownLabel(in container: NSView) {
+    private func setupCountdownLabel() {
+        guard let webView = self.webView else { return }
         let label = NSTextField(labelWithString: "3:00")
         label.textColor = .white
-        label.backgroundColor = .black
+        label.backgroundColor = .clear
         label.isBordered = false
-        label.drawsBackground = true
+        label.drawsBackground = false
         label.isEditable = false
         label.isSelectable = false
         label.font = NSFont.systemFont(ofSize: 12, weight: .medium)
         label.alignment = .center
-        label.layer?.cornerRadius = 4
-        label.layer?.masksToBounds = true
         
         let labelSize = label.fittingSize
         label.frame = NSRect(
@@ -92,7 +82,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         )
         label.autoresizingMask = [.minXMargin, .minYMargin]
         
-        container.addSubview(label)
+        webView.addSubview(label)
         countdownLabel = label
         updateCountdownLabel()
     }
@@ -101,6 +91,48 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         let minutes = remainingTime / 60
         let seconds = remainingTime % 60
         countdownLabel?.stringValue = String(format: "%d:%02d", minutes, seconds)
+    }
+
+    private func setTitleBarVisible(_ visible: Bool, animated: Bool) {
+        guard let window = self.window else { return }
+        
+        let buttons: [NSWindow.ButtonType] = [.closeButton, .miniaturizeButton, .zoomButton]
+        
+        if animated {
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = 0.18
+                for type in buttons {
+                    window.standardWindowButton(type)?.animator().alphaValue = visible ? 1 : 0
+                }
+            }
+        } else {
+            for type in buttons {
+                window.standardWindowButton(type)?.alphaValue = visible ? 1 : 0
+            }
+        }
+        
+        // Adjust webView frame to accommodate title bar
+        if let webView = self.webView {
+            var webFrame = window.contentView?.bounds ?? webView.frame
+            if visible {
+                titleBarHeight = dragBarHeight
+                webFrame.size.height -= titleBarHeight
+                webFrame.origin.y = titleBarHeight
+            } else {
+                webFrame.size.height += titleBarHeight
+                webFrame.origin.y = 0
+                titleBarHeight = 0
+            }
+            
+            if animated {
+                NSAnimationContext.runAnimationGroup { context in
+                    context.duration = 0.18
+                    webView.animator().frame = webFrame
+                }
+            } else {
+                webView.frame = webFrame
+            }
+        }
     }
 
     private func makeWebView(frame: NSRect) -> WKWebView {
@@ -143,23 +175,6 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
 
     func resetZoom() {
         webView.pageZoom = 1.0
-    }
-
-    private func setTitlebarControlsHidden(_ hidden: Bool, animated: Bool) {
-        guard let window = self.window else { return }
-        let buttons: [NSWindow.ButtonType] = [.closeButton, .miniaturizeButton, .zoomButton]
-        if animated {
-            NSAnimationContext.runAnimationGroup { context in
-                context.duration = 0.18
-                for type in buttons {
-                    window.standardWindowButton(type)?.animator().alphaValue = hidden ? 0 : 1
-                }
-            }
-        } else {
-            for type in buttons {
-                window.standardWindowButton(type)?.alphaValue = hidden ? 0 : 1
-            }
-        }
     }
 
     func windowWillClose(_ notification: Notification) {
