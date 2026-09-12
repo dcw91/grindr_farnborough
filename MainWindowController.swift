@@ -122,15 +122,16 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         label.font = NSFont.systemFont(ofSize: 12, weight: .medium)
         label.alignment = .left
 
+        // Bottom-left corner (AppKit origin is bottom-left, so small y = bottom)
         let labelSize = label.fittingSize
-        // Position in lower left, within the left black menu bar, above "Terms of Service"
         label.frame = NSRect(
             x: 10,
-            y: 180,
+            y: 20,
             width: labelSize.width + 10,
             height: labelSize.height
         )
-        label.autoresizingMask = [.minXMargin, .maxYMargin]
+        // Flexible right + top margins pin the label to the bottom-left
+        label.autoresizingMask = [.maxXMargin, .maxYMargin]
 
         overlayView.addSubview(label)
         countdownLabel = label
@@ -157,8 +158,6 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         let webPagePreferences = WKWebpagePreferences()
         webPagePreferences.allowsContentJavaScript = true
         config.defaultWebpagePreferences = webPagePreferences
-
-        config.applicationNameForUserAgent = "Version/17.5 Safari/605.1.15"
 
         let view = WKWebView(frame: frame, configuration: config)
         view.uiDelegate = self
@@ -200,12 +199,16 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         remainingTime = 60
         updateCountdownLabel()
 
-        countdownTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
+        let timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
             self?.tickTimer()
         }
+        // Let macOS coalesce wakeups with other timers; the label only needs
+        // to land somewhere within each second.
+        timer.tolerance = 0.3
+        countdownTimer = timer
     }
 
-    @objc private func tickTimer() {
+    private func tickTimer() {
         remainingTime -= 1
         updateCountdownLabel()
 
@@ -279,12 +282,6 @@ extension MainWindowController: WKNavigationDelegate {
         DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in
             self?.clickRefreshButton()
         }
-    }
-
-    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
-    }
-
-    func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
     }
 }
 
