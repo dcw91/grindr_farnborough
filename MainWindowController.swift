@@ -74,10 +74,10 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         let label = NSTextField(labelWithString: "3:00")
         label.textColor = .white
         label.backgroundColor = .black
-        label.bordered = false
+        label.isBordered = false
         label.drawsBackground = true
-        label.editable = false
-        label.selectable = false
+        label.isEditable = false
+        label.isSelectable = false
         label.font = NSFont.systemFont(ofSize: 12, weight: .medium)
         label.alignment = .center
         label.layer?.cornerRadius = 4
