@@ -122,16 +122,16 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         label.font = NSFont.systemFont(ofSize: 12, weight: .medium)
         label.alignment = .left
 
+        // Bottom-left corner (AppKit origin is bottom-left, so small y = bottom)
         let labelSize = label.fittingSize
-        // Position in lower left, within the left black menu bar, above "Terms of Service"
-        let overlayHeight = overlayView.bounds.height
         label.frame = NSRect(
             x: 10,
-            y: overlayHeight - 40,
+            y: 20,
             width: labelSize.width + 10,
             height: labelSize.height
         )
-        label.autoresizingMask = [.minXMargin, .maxYMargin]
+        // Flexible right + top margins pin the label to the bottom-left
+        label.autoresizingMask = [.maxXMargin, .maxYMargin]
 
         overlayView.addSubview(label)
         countdownLabel = label
