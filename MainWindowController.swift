@@ -66,7 +66,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         ))
         titleBarView.autoresizingMask = [.width, .minYMargin]
         titleBarView.onHoverChanged = { [weak self] hovering in
-            Task { @MainActor in
+            MainActor.run {
                 self?.setTitleBarButtonsVisible(hovering, animated: true)
             }
         }
@@ -191,13 +191,12 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         updateCountdownLabel()
         
         countdownTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
-            Task { @MainActor in
-                await self?.tickTimer()
+            MainActor.run {
+                self?.tickTimer()
             }
         }
     }
 
-    @MainActor
     private func tickTimer() {
         remainingTime -= 1
         updateCountdownLabel()
@@ -279,7 +278,7 @@ extension MainWindowController: WKNavigationDelegate {
         // After page loads, ensure we can click the button
         // Give a small delay for the page to fully render
         DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in
-            Task { @MainActor in
+            MainActor.run {
                 self?.clickRefreshButton()
             }
         }
