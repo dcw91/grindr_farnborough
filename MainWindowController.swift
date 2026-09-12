@@ -1,12 +1,8 @@
 import Cocoa
 import WebKit
 
+@MainActor
 final class MainWindowController: NSWindowController, NSWindowDelegate {
-    /// One shared process pool for every profile window: WebKit then runs a
-    /// single set of WebContent/GPU/Networking helpers instead of one stack
-    /// per window - the main RAM saving over running two separate app builds.
-    private static let processPool = WKProcessPool()
-
     // Serialises full page reloads across windows: at least 20 s between
     // starts, and the reloaded window stays key until the next one fires.
     private static let reloadSpacing: TimeInterval = 20
@@ -69,30 +65,30 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         }
     }
 
-    /// Queue this window for a full reload; the static coordinator guarantees
+    /// Queue this window for a full reload; the shared coordinator guarantees
     /// consecutive reloads are at least `reloadSpacing` apart.
     private func requestFullReload() {
-        MainWindowController.requestFullReload(self)
-    }
-
-    private static func requestFullReload(_ controller: MainWindowController) {
-        if !pendingReloads.contains(where: { $0 === controller }) {
-            pendingReloads.append(controller)
+        if !MainWindowController.pendingReloads.contains(where: { $0 === self }) {
+            MainWindowController.pendingReloads.append(self)
         }
-        pumpReloads()
+        MainWindowController.pumpReloads()
     }
 
     private static func pumpReloads() {
         guard !reloadPumpScheduled, !pendingReloads.isEmpty else { return }
         reloadPumpScheduled = true
         let wait = max(0, reloadSpacing - Date().timeIntervalSince(lastReloadAt))
-        DispatchQueue.main.asyncAfter(deadline: .now() + wait) { [pendingReloads] in
-            reloadPumpScheduled = false
-            guard let next = self.pendingReloads.first else { return }
-            self.pendingReloads.removeFirst()
-            lastReloadAt = Date()
-            next.performFullReload()
-            pumpReloads()
+        DispatchQueue.main.asyncAfter(deadline: .now() + wait) {
+            // Definitely on the main queue, so this is a free, checked-at-
+            // runtime hop back onto the actor - no Task allocation needed.
+            MainActor.assumeIsolated {
+                reloadPumpScheduled = false
+                guard let next = pendingReloads.first else { return }
+                pendingReloads.removeFirst()
+                lastReloadAt = Date()
+                next.performFullReload()
+                pumpReloads()
+            }
         }
     }
 
@@ -104,6 +100,10 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         NSApp.activate(ignoringOtherApps: true)
         window?.makeFirstResponder(webView)
         loadTarget()
+    }
+
+    private static func cancelPendingReload(for controller: MainWindowController) {
+        pendingReloads.removeAll { $0 === controller }
     }
 
     convenience init(profile: LocationProfile) {
@@ -203,9 +203,9 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
 
     private func makeWebView(frame: NSRect) -> WKWebView {
         let config = WKWebViewConfiguration()
-        config.processPool = MainWindowController.processPool
 
         // Per-profile persistent store: separate cookies/session per login.
+        // Requires macOS 14+; nil-identifier stores were unavailable before.
         if #available(macOS 14, *) {
             config.websiteDataStore = WKWebsiteDataStore(forIdentifier: profile.dataStoreIdentifier)
         } else {
@@ -268,7 +268,11 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         updateCountdownLabel()
 
         let timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
-            self?.tickTimer()
+            // Closing over @MainActor state from a @Sendable Timer closure:
+            // timer fires on the main run loop, this is a zero-cost hop.
+            MainActor.assumeIsolated {
+                self?.tickTimer()
+            }
         }
         // Let macOS coalesce wakeups with other timers; the label only needs
         // to land somewhere within each second.
@@ -310,10 +314,6 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         countdownTimer?.invalidate()
         MainWindowController.cancelPendingReload(for: self)
     }
-
-    private static func cancelPendingReload(for controller: MainWindowController) {
-        pendingReloads.removeAll { $0 === controller }
-    }
 }
 
 extension MainWindowController: WKUIDelegate {
@@ -349,13 +349,15 @@ extension MainWindowController: WKNavigationDelegate {
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in
-            self?.clickRefreshButton()
+            MainActor.assumeIsolated {
+                self?.clickRefreshButton()
+            }
         }
     }
 }
 
 final class KeyableWindow: NSWindow {
-    var onMouseMoved: ((CGFloat) -> Void)?
+    var onMouseMoved: (@MainActor (CGFloat) -> Void)?
 
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { true }
