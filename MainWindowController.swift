@@ -4,13 +4,12 @@ import WebKit
 @MainActor
 final class MainWindowController: NSWindowController, NSWindowDelegate {
     private var webView: WKWebView!
-    private var dragBar: TitlebarDragView!
-    private let dragBarHeight: CGFloat = 34
+    private var titleBarView: TitlebarDragView!
+    private let titleBarHeight: CGFloat = 34
     private var popupControllers: [PopupWindowController] = []
     private var refreshTimer: Timer?
     private var countdownLabel: NSTextField?
     private var remainingTime: Int = 180
-    private var titleBarHeight: CGFloat = 0
 
     convenience init() {
         let styleMask: NSWindow.StyleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
@@ -40,24 +39,31 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         contentView.wantsLayer = true
         window.contentView = contentView
 
-        webView = makeWebView(frame: contentView.bounds)
+        // WebView fills the content area below the title bar
+        webView = makeWebView(frame: NSRect(
+            x: 0,
+            y: 0,
+            width: contentView.bounds.width,
+            height: contentView.bounds.height
+        ))
         webView.autoresizingMask = [.width, .height]
         contentView.addSubview(webView)
 
-        dragBar = TitlebarDragView(frame: NSRect(
+        // Title bar view at the top - this is the invisible drag area
+        titleBarView = TitlebarDragView(frame: NSRect(
             x: 0,
-            y: contentView.bounds.height - dragBarHeight,
+            y: contentView.bounds.height - titleBarHeight,
             width: contentView.bounds.width,
-            height: dragBarHeight
+            height: titleBarHeight
         ))
-        dragBar.autoresizingMask = [.width, .minYMargin]
-        dragBar.onHoverChanged = { [weak self] hovering in
-            self?.setTitleBarVisible(hovering, animated: true)
+        titleBarView.autoresizingMask = [.width, .minYMargin]
+        titleBarView.onHoverChanged = { [weak self] hovering in
+            self?.setTitleBarButtonsVisible(hovering, animated: true)
         }
-        contentView.addSubview(dragBar)
+        contentView.addSubview(titleBarView)
 
         setupCountdownLabel()
-        setTitleBarVisible(false, animated: false)
+        setTitleBarButtonsVisible(false, animated: false)
         loadTarget()
     }
 
@@ -71,14 +77,16 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         label.isEditable = false
         label.isSelectable = false
         label.font = NSFont.systemFont(ofSize: 12, weight: .medium)
-        label.alignment = .center
+        label.alignment = .left
         
         let labelSize = label.fittingSize
+        // Position in lower left, above "Terms of Service" in the left menu bar
+        // The left menu bar is approximately 80px wide
         label.frame = NSRect(
             x: 10,
-            y: 10,
-            width: max(labelSize.width + 20, 50),
-            height: labelSize.height + 8
+            y: 20,
+            width: labelSize.width + 10,
+            height: labelSize.height
         )
         label.autoresizingMask = [.minXMargin, .minYMargin]
         
@@ -93,7 +101,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         countdownLabel?.stringValue = String(format: "%d:%02d", minutes, seconds)
     }
 
-    private func setTitleBarVisible(_ visible: Bool, animated: Bool) {
+    private func setTitleBarButtonsVisible(_ visible: Bool, animated: Bool) {
         guard let window = self.window else { return }
         
         let buttons: [NSWindow.ButtonType] = [.closeButton, .miniaturizeButton, .zoomButton]
@@ -108,29 +116,6 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         } else {
             for type in buttons {
                 window.standardWindowButton(type)?.alphaValue = visible ? 1 : 0
-            }
-        }
-        
-        // Adjust webView frame to accommodate title bar
-        if let webView = self.webView {
-            var webFrame = window.contentView?.bounds ?? webView.frame
-            if visible {
-                titleBarHeight = dragBarHeight
-                webFrame.size.height -= titleBarHeight
-                webFrame.origin.y = titleBarHeight
-            } else {
-                webFrame.size.height += titleBarHeight
-                webFrame.origin.y = 0
-                titleBarHeight = 0
-            }
-            
-            if animated {
-                NSAnimationContext.runAnimationGroup { context in
-                    context.duration = 0.18
-                    webView.animator().frame = webFrame
-                }
-            } else {
-                webView.frame = webFrame
             }
         }
     }

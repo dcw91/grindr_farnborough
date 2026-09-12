@@ -39,4 +39,10 @@ final class TitlebarDragView: NSView {
     override func mouseDown(with event: NSEvent) {
         window?.performDrag(with: event)
     }
+    
+    override func draw(_ dirtyRect: NSRect) {
+        // Draw a black background for the title bar area
+        NSColor.black.setFill()
+        dirtyRect.fill()
+    }
 }
