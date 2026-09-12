@@ -8,9 +8,11 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     private let dragBarHeight: CGFloat = 34
     private var popupControllers: [PopupWindowController] = []
     private var refreshTimer: Timer?
+    private var countdownLabel: NSTextField?
+    private var remainingTime: Int = 180
 
     convenience init() {
-        let styleMask: NSWindow.StyleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
+        let styleMask: NSWindow.StyleMask = [.titled, .closable, .miniaturizable, .resizable]
         let window = KeyableWindow(
             contentRect: NSRect(x: 0, y: 0, width: 480, height: 860),
             styleMask: styleMask,
@@ -21,9 +23,9 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         window.center()
         window.minSize = NSSize(width: 360, height: 480)
 
-        window.titlebarAppearsTransparent = true
-        window.titleVisibility = .hidden
-        window.isMovableByWindowBackground = false
+        window.titlebarAppearsTransparent = false
+        window.titleVisibility = .visible
+        window.isMovableByWindowBackground = true
 
         self.init(window: window)
         window.delegate = self
@@ -37,9 +39,19 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         contentView.wantsLayer = true
         window.contentView = contentView
 
-        webView = makeWebView(frame: contentView.bounds)
+        // Create a container for the webView that will be positioned below the title bar
+        let webContainer = NSView(frame: NSRect(
+            x: 0,
+            y: 0,
+            width: contentView.bounds.width,
+            height: contentView.bounds.height
+        ))
+        webContainer.autoresizingMask = [.width, .height]
+        contentView.addSubview(webContainer)
+
+        webView = makeWebView(frame: webContainer.bounds)
         webView.autoresizingMask = [.width, .height]
-        contentView.addSubview(webView)
+        webContainer.addSubview(webView)
 
         dragBar = TitlebarDragView(frame: NSRect(
             x: 0,
@@ -53,8 +65,42 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         }
         contentView.addSubview(dragBar)
 
-        setTitlebarControlsHidden(true, animated: false)
+        setTitlebarControlsHidden(false, animated: false)
+        setupCountdownLabel(in: webContainer)
         loadTarget()
+    }
+
+    private func setupCountdownLabel(in container: NSView) {
+        let label = NSTextField(labelWithString: "3:00")
+        label.textColor = .white
+        label.backgroundColor = .black
+        label.bordered = false
+        label.drawsBackground = true
+        label.editable = false
+        label.selectable = false
+        label.font = NSFont.systemFont(ofSize: 12, weight: .medium)
+        label.alignment = .center
+        label.layer?.cornerRadius = 4
+        label.layer?.masksToBounds = true
+        
+        let labelSize = label.fittingSize
+        label.frame = NSRect(
+            x: 10,
+            y: 10,
+            width: max(labelSize.width + 20, 50),
+            height: labelSize.height + 8
+        )
+        label.autoresizingMask = [.minXMargin, .minYMargin]
+        
+        container.addSubview(label)
+        countdownLabel = label
+        updateCountdownLabel()
+    }
+
+    private func updateCountdownLabel() {
+        let minutes = remainingTime / 60
+        let seconds = remainingTime % 60
+        countdownLabel?.stringValue = String(format: "%d:%02d", minutes, seconds)
     }
 
     private func makeWebView(frame: NSRect) -> WKWebView {
@@ -123,11 +169,20 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
 
     private func startRefreshTimer() {
         refreshTimer?.invalidate()
-        refreshTimer = Timer.scheduledTimer(withTimeInterval: 180, repeats: true) { [weak self] _ in
-            self?.window?.makeKeyAndOrderFront(nil)
-            NSApp.activate(ignoringOtherApps: true)
-            self?.window?.makeFirstResponder(self?.webView)
-            self?.loadTarget()
+        remainingTime = 180
+        updateCountdownLabel()
+        
+        refreshTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
+            self?.remainingTime -= 1
+            self?.updateCountdownLabel()
+            
+            if self?.remainingTime == 0 {
+                self?.remainingTime = 180
+                self?.window?.makeKeyAndOrderFront(nil)
+                NSApp.activate(ignoringOtherApps: true)
+                self?.window?.makeFirstResponder(self?.webView)
+                self?.loadTarget()
+            }
         }
     }
 }
