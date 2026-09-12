@@ -7,6 +7,13 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     /// per window - the main RAM saving over running two separate app builds.
     private static let processPool = WKProcessPool()
 
+    // Serialises full page reloads across windows: at least 20 s between
+    // starts, and the reloaded window stays key until the next one fires.
+    private static let reloadSpacing: TimeInterval = 20
+    private static var lastReloadAt = Date.distantPast
+    private static var pendingReloads: [MainWindowController] = []
+    private static var reloadPumpScheduled = false
+
     private var webView: WKWebView!
     private var popupControllers: [PopupWindowController] = []
     private var countdownTimer: Timer?
@@ -54,9 +61,49 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         webView.frame = NSRect(x: 0, y: 0, width: full.width, height: webHeight)
         overlayView.frame = webView.frame
 
+        // Title text lives and dies with the bar
+        window.titleVisibility = revealed ? .visible : .hidden
+
         for type in [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton] {
             window.standardWindowButton(type)?.alphaValue = revealed ? 1 : 0
         }
+    }
+
+    /// Queue this window for a full reload; the static coordinator guarantees
+    /// consecutive reloads are at least `reloadSpacing` apart.
+    private func requestFullReload() {
+        MainWindowController.requestFullReload(self)
+    }
+
+    private static func requestFullReload(_ controller: MainWindowController) {
+        if !pendingReloads.contains(where: { $0 === controller }) {
+            pendingReloads.append(controller)
+        }
+        pumpReloads()
+    }
+
+    private static func pumpReloads() {
+        guard !reloadPumpScheduled, !pendingReloads.isEmpty else { return }
+        reloadPumpScheduled = true
+        let wait = max(0, reloadSpacing - Date().timeIntervalSince(lastReloadAt))
+        DispatchQueue.main.asyncAfter(deadline: .now() + wait) { [pendingReloads] in
+            reloadPumpScheduled = false
+            guard let next = self.pendingReloads.first else { return }
+            self.pendingReloads.removeFirst()
+            lastReloadAt = Date()
+            next.performFullReload()
+            pumpReloads()
+        }
+    }
+
+    /// Bring this window forward and make it active BEFORE reloading, so the
+    /// page refresh happens in a focused, visible context. Nothing steals
+    /// focus afterwards, so it stays active until the next window's turn.
+    private func performFullReload() {
+        window?.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+        window?.makeFirstResponder(webView)
+        loadTarget()
     }
 
     convenience init(profile: LocationProfile) {
@@ -69,10 +116,10 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         )
 
         // Title identifies which location this window is for (e.g. "Grindr
-        // Farnborough"), shown whenever the title bar is revealed on hover.
+        // Farnborough"); visible only while the title bar is revealed.
         window.title = "Grindr \(profile.name)"
         window.titlebarAppearsTransparent = true
-        window.titleVisibility = .visible
+        window.titleVisibility = .hidden
         window.isMovableByWindowBackground = false
         window.acceptsMouseMovedEvents = true
         window.center()
@@ -136,7 +183,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         let labelSize = label.fittingSize
         label.frame = NSRect(
             x: 10,
-            y: 120,
+            y: 20,
             width: labelSize.width + 10,
             height: labelSize.height
         )
@@ -240,12 +287,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
 
             if clickCount >= MainWindowController.clicksPerRefresh {
                 clickCount = 0
-                DispatchQueue.main.async { [weak self] in
-                    self?.window?.makeKeyAndOrderFront(nil)
-                    NSApp.activate(ignoringOtherApps: true)
-                    self?.window?.makeFirstResponder(self?.webView)
-                    self?.loadTarget()
-                }
+                requestFullReload()
             }
         }
     }
@@ -266,6 +308,11 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         // App quits when the LAST window closes (applicationShouldTerminate-
         // AfterLastWindowClosed); an individual window just stops its timer.
         countdownTimer?.invalidate()
+        MainWindowController.cancelPendingReload(for: self)
+    }
+
+    private static func cancelPendingReload(for controller: MainWindowController) {
+        pendingReloads.removeAll { $0 === controller }
     }
 }
 
