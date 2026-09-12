@@ -8,8 +8,11 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     private let titleBarHeight: CGFloat = 34
     private var popupControllers: [PopupWindowController] = []
     private var refreshTimer: Timer?
+    private var countdownTimer: Timer?
     private var countdownLabel: NSTextField?
-    private var remainingTime: Int = 180
+    private var remainingTime: Int = 60
+    private var clickCount: Int = 0
+    private static let clicksPerRefresh = 10
 
     convenience init() {
         let styleMask: NSWindow.StyleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
@@ -30,7 +33,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         self.init(window: window)
         window.delegate = self
         setup()
-        startRefreshTimer()
+        startTimers()
     }
 
     private func setup() {
@@ -69,7 +72,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
 
     private func setupCountdownLabel() {
         guard let webView = self.webView else { return }
-        let label = NSTextField(labelWithString: "3:00")
+        let label = NSTextField(labelWithString: "1:00")
         label.textColor = .white
         label.backgroundColor = .clear
         label.isBordered = false
@@ -150,6 +153,58 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         webView.load(URLRequest(url: url))
     }
 
+    private func clickRefreshButton() {
+        let js = """
+        (function() {
+            var btn = document.querySelector('button[aria-label="refresh grid"]');
+            if (btn) {
+                btn.click();
+                return true;
+            }
+            // Fallback: try to find by class pattern if aria-label not found
+            var buttons = document.querySelectorAll('button');
+            for (var i = 0; i < buttons.length; i++) {
+                if (buttons[i].getAttribute('aria-label') && buttons[i].getAttribute('aria-label').includes('refresh')) {
+                    buttons[i].click();
+                    return true;
+                }
+            }
+            return false;
+        })();
+        """
+        webView.evaluateJavaScript(js) { _, error in
+            if let error = error {
+                print("Error clicking refresh button: \(error)")
+            }
+        }
+    }
+
+    private func startTimers() {
+        // Countdown timer - updates every second
+        countdownTimer?.invalidate()
+        remainingTime = 60
+        updateCountdownLabel()
+        
+        countdownTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
+            self?.remainingTime -= 1
+            self?.updateCountdownLabel()
+            
+            if self?.remainingTime == 0 {
+                self?.remainingTime = 60
+                self?.clickRefreshButton()
+                self?.clickCount += 1
+                
+                if (self?.clickCount ?? 0) >= MainWindowController.clicksPerRefresh {
+                    self?.clickCount = 0
+                    self?.window?.makeKeyAndOrderFront(nil)
+                    NSApp.activate(ignoringOtherApps: true)
+                    self?.window?.makeFirstResponder(self?.webView)
+                    self?.loadTarget()
+                }
+            }
+        }
+    }
+
     func zoomIn() {
         webView.pageZoom = min(webView.pageZoom + 0.1, 3.0)
     }
@@ -164,26 +219,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
 
     func windowWillClose(_ notification: Notification) {
         refreshTimer?.invalidate()
+        countdownTimer?.invalidate()
         NSApp.terminate(nil)
-    }
-
-    private func startRefreshTimer() {
-        refreshTimer?.invalidate()
-        remainingTime = 180
-        updateCountdownLabel()
-        
-        refreshTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
-            self?.remainingTime -= 1
-            self?.updateCountdownLabel()
-            
-            if self?.remainingTime == 0 {
-                self?.remainingTime = 180
-                self?.window?.makeKeyAndOrderFront(nil)
-                NSApp.activate(ignoringOtherApps: true)
-                self?.window?.makeFirstResponder(self?.webView)
-                self?.loadTarget()
-            }
-        }
     }
 }
 
@@ -225,6 +262,14 @@ extension MainWindowController: WKUIDelegate {
 extension MainWindowController: WKNavigationDelegate {
     func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
         decisionHandler(.allow)
+    }
+    
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        // After page loads, ensure we can click the button
+        // Give a small delay for the page to fully render
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in
+            self?.clickRefreshButton()
+        }
     }
 }
 
