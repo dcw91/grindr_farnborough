@@ -7,7 +7,6 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     private var titleBarView: TitlebarDragView!
     private let titleBarHeight: CGFloat = 34
     private var popupControllers: [PopupWindowController] = []
-    private var refreshTimer: Timer?
     private var countdownTimer: Timer?
     private var countdownLabel: NSTextField?
     private var remainingTime: Int = 60
@@ -67,7 +66,9 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         ))
         titleBarView.autoresizingMask = [.width, .minYMargin]
         titleBarView.onHoverChanged = { [weak self] hovering in
-            self?.setTitleBarButtonsVisible(hovering, animated: true)
+            Task { @MainActor in
+                self?.setTitleBarButtonsVisible(hovering, animated: true)
+            }
         }
         contentView.addSubview(titleBarView)
 
@@ -190,21 +191,28 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         updateCountdownLabel()
         
         countdownTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
-            self?.remainingTime -= 1
-            self?.updateCountdownLabel()
+            Task { @MainActor in
+                self?.tickTimer()
+            }
+        }
+    }
+
+    @MainActor
+    private func tickTimer() {
+        remainingTime -= 1
+        updateCountdownLabel()
+        
+        if remainingTime == 0 {
+            remainingTime = 60
+            clickRefreshButton()
+            clickCount += 1
             
-            if self?.remainingTime == 0 {
-                self?.remainingTime = 60
-                self?.clickRefreshButton()
-                self?.clickCount += 1
-                
-                if (self?.clickCount ?? 0) >= MainWindowController.clicksPerRefresh {
-                    self?.clickCount = 0
-                    self?.window?.makeKeyAndOrderFront(nil)
-                    NSApp.activate(ignoringOtherApps: true)
-                    self?.window?.makeFirstResponder(self?.webView)
-                    self?.loadTarget()
-                }
+            if clickCount >= MainWindowController.clicksPerRefresh {
+                clickCount = 0
+                window?.makeKeyAndOrderFront(nil)
+                NSApp.activate(ignoringOtherApps: true)
+                window?.makeFirstResponder(webView)
+                loadTarget()
             }
         }
     }
@@ -222,7 +230,6 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     }
 
     func windowWillClose(_ notification: Notification) {
-        refreshTimer?.invalidate()
         countdownTimer?.invalidate()
         NSApp.terminate(nil)
     }
@@ -272,7 +279,9 @@ extension MainWindowController: WKNavigationDelegate {
         // After page loads, ensure we can click the button
         // Give a small delay for the page to fully render
         DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in
-            self?.clickRefreshButton()
+            Task { @MainActor in
+                self?.clickRefreshButton()
+            }
         }
     }
 }
