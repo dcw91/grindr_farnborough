@@ -2,14 +2,22 @@ import Cocoa
 
 /// A full-width strip at the top of the window that both (a) reveals the
 /// window's traffic-light buttons on hover, and (b) is itself always
-/// draggable, so the whole bar moves the window — not just the three
+/// draggable, so the whole bar moves the window  not just the three
 /// small buttons.
 final class TitlebarDragView: NSView {
     var onHoverChanged: ((Bool) -> Void)?
     private let hoverHeight: CGFloat = 10
 
     private var trackingArea: NSTrackingArea?
+    private var isHovering: Bool = false {
+        didSet {
+            if isHovering != oldValue {
+                needsDisplay = true
+            }
+        }
+    }
 
+    override var isOpaque: Bool { false }
     override var mouseDownCanMoveWindow: Bool { true }
 
     override func updateTrackingAreas() {
@@ -29,10 +37,12 @@ final class TitlebarDragView: NSView {
     }
 
     override func mouseEntered(with event: NSEvent) {
+        isHovering = true
         onHoverChanged?(true)
     }
 
     override func mouseExited(with event: NSEvent) {
+        isHovering = false
         onHoverChanged?(false)
     }
 
@@ -41,8 +51,10 @@ final class TitlebarDragView: NSView {
     }
     
     override func draw(_ dirtyRect: NSRect) {
-        // Draw a black background for the title bar area
-        NSColor.black.setFill()
-        dirtyRect.fill()
+        // Only draw black background when hovering
+        if isHovering {
+            NSColor.black.setFill()
+            dirtyRect.fill()
+        }
     }
 }
