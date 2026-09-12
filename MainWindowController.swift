@@ -136,7 +136,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         let labelSize = label.fittingSize
         label.frame = NSRect(
             x: 10,
-            y: 20,
+            y: 120,
             width: labelSize.width + 10,
             height: labelSize.height
         )
