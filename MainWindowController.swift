@@ -124,6 +124,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     private func startRefreshTimer() {
         refreshTimer?.invalidate()
         refreshTimer = Timer.scheduledTimer(withTimeInterval: 180, repeats: true) { [weak self] _ in
+            self?.window?.makeKeyAndOrderFront(nil)
             self?.loadTarget()
         }
     }
